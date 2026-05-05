@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LLM Chess Arena</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f5f5;
+    color: #1a1a1a;
+    min-height: 100vh;
+  }
+
+  header {
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+  header h1 { font-size: 1.1rem; font-weight: 600; }
+
+  .tabs { display: flex; gap: 4px; }
+  .tab {
+    padding: 6px 16px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    background: none;
+    color: #555;
+    transition: all 0.15s;
+  }
+  .tab.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .tab:not(.active):hover { background: #f0f0f0; border-color: #ddd; }
+
+  .page { display: none; padding: 24px; max-width: 1300px; margin: 0 auto; }
+  .page.active { display: block; }
+
+  /* ---- Arena layout ---- */
+  .arena-layout {
+    display: grid;
+    grid-template-columns: 240px auto 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .card h3 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #999;
+    margin-bottom: 10px;
+  }
+
+  label { font-size: 0.83rem; color: #444; display: block; margin-bottom: 3px; margin-top: 9px; }
+  label:first-of-type { margin-top: 0; }
+
+  select {
+    width: 100%;
+    padding: 6px 9px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 0.83rem;
+    background: #fff;
+    color: #1a1a1a;
+    outline: none;
+  }
+  select:focus { border-color: #999; }
+
+  .pill-group { display: flex; gap: 5px; margin-top: 5px; }
+  .pill {
+    padding: 3px 12px;
+    border: 1px solid #d0d0d0;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    background: #fff;
+    color: #555;
+    transition: all 0.15s;
+  }
+  .pill.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+
+  .controls { display: flex; gap: 8px; margin-top: 12px; }
+  .btn {
+    padding: 7px 16px;
+    border: 1px solid #1a1a1a;
+    border-radius: 6px;
+    font-size: 0.83rem;
+    cursor: pointer;
+    background: #1a1a1a;
+    color: #fff;
+    transition: opacity 0.15s;
+    flex: 1;
+  }
+  .btn:hover { opacity: 0.82; }
+  .btn.secondary { background: #fff; color: #1a1a1a; }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ---- Board ---- */
+  .board-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+  #status-bar {
+    font-size: 0.82rem;
+    color: #444;
+    font-family: monospace;
+    min-height: 18px;
+    text-align: center;
+  }
+  #status-bar.thinking { color: #1967d2; }
+  #status-bar.finished { color: #137333; font-weight: 600; }
+  #status-bar.error { color: #c0392b; font-weight: 600; }
+
+  #board {
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    overflow: hidden;
+    display: inline-block;
+  }
+  .board-row { display: flex; }
+  .sq {
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.2rem;
+    line-height: 1;
+    user-select: none;
+  }
+  .sq.light { background: #f0d9b5; }
+  .sq.dark  { background: #b58863; }
+
+  .coord-row { display: flex; width: 448px; justify-content: space-around; padding-top: 3px; }
+  .coord-col { display: flex; flex-direction: column; justify-content: space-around; height: 448px; padding-right: 4px; }
+  .coord-row span, .coord-col span { font-size: 0.6rem; color: #aaa; font-family: monospace; }
+
+  /* ---- Move browse navigation ---- */
+  #move-nav {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    margin-top: 6px;
+    width: 448px;
+    justify-content: center;
+  }
+  .nav-btn {
+    padding: 4px 11px;
+    border: 1px solid #d0d0d0;
+    border-radius: 5px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #555;
+    transition: all 0.12s;
+    line-height: 1.4;
+  }
+  .nav-btn:hover:not(:disabled) { background: #f0f0f0; border-color: #aaa; }
+  .nav-btn:disabled { opacity: 0.3; cursor: default; }
+  #nav-label {
+    font-size: 0.78rem;
+    font-family: monospace;
+    min-width: 72px;
+    text-align: center;
+    color: #555;
+    font-weight: 500;
+  }
+
+  /* ---- Illegal event notification ---- */
+  #illegal-event {
+    display: none;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.78rem;
+    color: #856404;
+    margin-top: 5px;
+    width: 448px;
+    text-align: center;
+  }
+  #illegal-event.show { display: block; }
+
+  /* ---- Game-over banner ---- */
+  #gameover-banner {
+    display: none;
+    background: #fff;
+    border: 2px solid #1a1a1a;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-top: 6px;
+    width: 448px;
+    text-align: center;
+  }
+  #gameover-banner.show { display: block; }
+  #gameover-banner .go-result { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
+  #gameover-banner .go-reason { font-size: 0.9rem; color: #333; font-weight: 500; }
+  #gameover-banner .go-models { font-size: 0.78rem; color: #888; margin-top: 4px; font-family: monospace; }
+  #gameover-banner .go-forfeit {
+    margin-top: 10px;
+    font-size: 0.78rem;
+    color: #c0392b;
+    background: #fdf0ef;
+    border-radius: 6px;
+    padding: 8px 10px;
+    text-align: left;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ---- Right column ---- */
+  .right-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  /* Move log */
+  #move-log {
+    font-family: monospace;
+    font-size: 0.8rem;
+    max-height: 260px;
+    overflow-y: auto;
+    line-height: 1;
+  }
+
+  .move-pair {
+    display: grid;
+    grid-template-columns: 28px 1fr 1fr;
+    gap: 2px;
+    margin-bottom: 1px;
+  }
+  .move-num { color: #aaa; padding: 4px 2px; }
+  .move-cell {
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.1s;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .move-cell:hover { background: #f0f0f0; }
+  .move-cell.selected { background: #e8f0fe; }
+  .move-cell.retry { color: #b45309; }
+  .move-cell.retry::before { content: "↺ "; }
+  .move-cell.forfeit { color: #c0392b; font-weight: 600; }
+  .move-cell.forfeit::before { content: "✗ "; }
+  .move-cell.browse-active { background: #fef3c7; border-radius: 3px; }
+  .move-cell.empty { cursor: default; }
+  .eval-score { font-size: 0.7rem; color: #888; margin-left: 4px; font-weight: 400; }
+
+  /* Reasoning panel */
+  #reasoning-panel {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 14px;
+    min-height: 120px;
+  }
+  #reasoning-panel h3 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #999;
+    margin-bottom: 8px;
+  }
+  #reasoning-who {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 6px;
+    font-family: monospace;
+  }
+  #first-attempt-block {
+    background: #fff8ed;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+  }
+  #first-attempt-block .fa-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #92400e;
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: block;
+  }
+  #first-attempt-move {
+    font-family: monospace;
+    font-size: 0.82rem;
+    color: #92400e;
+    margin-bottom: 3px;
+  }
+  #first-attempt-prompt {
+    font-size: 0.72rem;
+    color: #92400e;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 120px;
+    overflow-y: auto;
+    font-family: monospace;
+    background: #fef9ee;
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin-bottom: 4px;
+  }
+  #first-attempt-raw {
+    font-size: 0.78rem;
+    color: #78350f;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 120px;
+    overflow-y: auto;
+    font-family: monospace;
+  }
+  #raw-response-always {
+    font-size: 0.72rem;
+    font-family: monospace;
+    color: #555;
+    background: #f8f8f8;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 150px;
+    overflow-y: auto;
+    margin-top: 6px;
+  }
+  .retry-section-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #b45309;
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: block;
+  }
+  #reasoning-text {
+    font-size: 0.875rem;
+    color: #1a1a1a;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #reasoning-text.empty { color: #bbb; font-style: italic; }
+  #reasoning-text.illegal { color: #c0392b; font-weight: 500; }
+
+  /* Raw response toggle */
+  #raw-toggle {
+    margin-top: 10px;
+    font-size: 0.75rem;
+    color: #999;
+    cursor: pointer;
+    text-decoration: underline;
+    display: none;
+  }
+  #raw-toggle.show { display: inline; }
+  #raw-response {
+    display: none;
+    margin-top: 8px;
+    font-size: 0.72rem;
+    font-family: monospace;
+    color: #555;
+    background: #f8f8f8;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  /* ---- Prompt preview ---- */
+  #prompt-preview {
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: #444;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #f8f8f8;
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+
+  /* ---- Leaderboard ---- */
+  .lb-filters { display: flex; gap: 6px; margin-bottom: 14px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+  }
+  th {
+    text-align: left;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #888;
+    padding: 10px 14px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fafafa;
+  }
+  td { padding: 10px 14px; font-size: 0.875rem; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafafa; }
+  .elo-val { font-weight: 600; font-family: monospace; }
+  .lang-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 500;
+  }
+  .lang-EN { background: #e8f0fe; color: #1967d2; }
+  .lang-IS { background: #fce8e6; color: #c5221f; }
+
+  /* ---- History ---- */
+  #game-history { display: flex; flex-direction: column; gap: 8px; }
+  .game-row {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .game-row:hover { border-color: #aaa; }
+  .game-row .gr-top { display: flex; justify-content: space-between; font-size: 0.85rem; align-items: center; }
+  .game-row .gr-bottom { font-size: 0.75rem; color: #888; margin-top: 4px; font-family: monospace; }
+
+  .result-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+  .result-white { background: #f8f8f8; border: 1px solid #ccc; color: #1a1a1a; }
+  .result-black { background: #1a1a1a; color: #fff; }
+  .result-draw  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 640px;
+    width: 95%;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .modal h2 { font-size: 1rem; margin-bottom: 6px; }
+  .modal-subtitle { font-size: 0.8rem; color: #888; margin-bottom: 16px; }
+  .modal-move { border-bottom: 1px solid #f0f0f0; padding: 8px 0; }
+  .modal-move:last-child { border-bottom: none; }
+  .modal-move-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+  }
+  .modal-move-header .mn { color: #aaa; }
+  .modal-move-header .mc { font-weight: 600; }
+  .modal-move-header .mi { color: #888; font-size: 0.75rem; }
+  .modal-move-header .mr { color: #c0392b; font-size: 0.72rem; }
+  .modal-reasoning {
+    font-size: 0.82rem;
+    color: #444;
+    line-height: 1.45;
+    padding-left: 8px;
+    border-left: 2px solid #e0e0e0;
+    margin-left: 4px;
+  }
+  .modal-reasoning.no-reason { color: #bbb; font-style: italic; }
+  .close-modal {
+    margin-top: 16px;
+    padding: 8px 20px;
+    border: 1px solid #1a1a1a;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>♟ LLM Chess Arena</h1>
+  <nav class="tabs">
+    <button class="tab active" onclick="showTab('arena')">Arena</button>
+    <button class="tab" onclick="showTab('leaderboard')">Leaderboard</button>
+    <button class="tab" onclick="showTab('history')">History</button>
+  </nav>
+</header>
+
+<!-- ===== ARENA ===== -->
+<div id="tab-arena" class="page active">
+  <div class="arena-layout">
+
+    <!-- Left: controls -->
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="card">
+        <h3>White</h3>
+        <label>Model</label>
+        <select id="white-model"></select>
+        <label>Language</label>
+        <div class="pill-group" id="white-lang">
+          <button class="pill active" data-lang="EN" onclick="setPill('white-lang','EN',this)">EN</button>
+          <button class="pill" data-lang="IS" onclick="setPill('white-lang','IS',this)">IS</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Black</h3>
+        <label>Model</label>
+        <select id="black-model"></select>
+        <label>Language</label>
+        <div class="pill-group" id="black-lang">
+          <button class="pill active" data-lang="EN" onclick="setPill('black-lang','EN',this)">EN</button>
+          <button class="pill" data-lang="IS" onclick="setPill('black-lang','IS',this)">IS</button>
+        </div>
+      </div>
+      <div class="card" style="display:none">
+        <h3>Mode</h3>
+        <div class="pill-group" id="mode-picker">
+          <button class="pill active" data-mode="fen" onclick="setPill('mode-picker','fen',this)">FEN + moves</button>
+          <button class="pill" data-mode="pgn" onclick="setPill('mode-picker','pgn',this)">PGN only</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Attempts per move</h3>
+        <div class="pill-group" id="attempts-picker">
+          <button class="pill active" data-attempts="2" onclick="setPill('attempts-picker','attempts',this)">2</button>
+          <button class="pill" data-attempts="5" onclick="setPill('attempts-picker','attempts',this)">5</button>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="btn-start" onclick="startGame()">Start</button>
+        <button class="btn secondary" id="btn-pause" onclick="togglePause()" disabled>Pause</button>
+        <button class="btn secondary" id="btn-stop" onclick="stopGame()" disabled>Stop</button>
+      </div>
+      <div class="card">
+        <h3>White's opening prompt</h3>
+        <div id="prompt-preview">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Centre: board -->
+    <div class="board-wrap">
+      <div id="status-bar">Ready</div>
+      <div style="display:flex;align-items:center;">
+        <div class="coord-col">
+          <span>8</span><span>7</span><span>6</span><span>5</span>
+          <span>4</span><span>3</span><span>2</span><span>1</span>
+        </div>
+        <div id="board"></div>
+      </div>
+      <div class="coord-row">
+        <span>a</span><span>b</span><span>c</span><span>d</span>
+        <span>e</span><span>f</span><span>g</span><span>h</span>
+      </div>
+      <div id="move-nav">
+        <button class="nav-btn" id="nav-first" onclick="navTo(0)"   title="Start position" disabled>⏮</button>
+        <button class="nav-btn" id="nav-prev"  onclick="navStep(-1)" title="Previous move"  disabled>◀</button>
+        <span id="nav-label">—</span>
+        <button class="nav-btn" id="nav-next"  onclick="navStep(1)"  title="Next move"      disabled>▶</button>
+        <button class="nav-btn" id="nav-last"  onclick="navLast()"   title="Latest move"    disabled>⏭</button>
+      </div>
+      <div id="illegal-event"></div>
+      <div id="gameover-banner">
+        <div class="go-result" id="go-result"></div>
+        <div class="go-reason" id="go-reason"></div>
+        <div class="go-models" id="go-models"></div>
+        <div class="go-forfeit" id="go-forfeit" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Right: move log + reasoning -->
+    <div class="right-col">
+      <div class="card">
+        <h3>Moves <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#bbb;font-size:0.7rem">— click for reasoning</span></h3>
+        <div id="move-log"></div>
+      </div>
+
+      <div id="reasoning-panel">
+        <h3>Reasoning</h3>
+        <div id="reasoning-who"></div>
+        <div id="first-attempt-block" style="display:none">
+          <span class="fa-label">⚠ Attempt 1 — prompt sent</span>
+          <div id="first-attempt-prompt"></div>
+          <span class="fa-label" style="margin-top:6px">⚠ Attempt 1 — model response</span>
+          <div id="first-attempt-raw"></div>
+        </div>
+        <span id="retry-section-label" class="retry-section-label" style="display:none">↺ Attempt 2 — model response</span>
+        <div id="reasoning-text" class="empty">Select a move to see its reasoning.</div>
+        <div id="raw-response-always" style="display:none"></div>
+        <span id="raw-toggle" onclick="toggleRaw()">show raw response</span>
+        <div id="raw-response"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== LEADERBOARD ===== -->
+<div id="tab-leaderboard" class="page">
+  <div class="lb-filters">
+    <button class="pill active" onclick="setLbFilter('all',this)">All</button>
+    <button class="pill" onclick="setLbFilter('EN',this)">English</button>
+    <button class="pill" onclick="setLbFilter('IS',this)">Icelandic</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th>#</th><th>Model</th><th>Lang</th><th>W / L / D</th><th>Games</th><th>Avg moves/win</th><th>Avg moves/loss</th><th>Avg moves/game</th><th>W/L/D as white</th><th>W/L/D as black</th><th>Games as white</th><th>Games as black</th><th>W/L checkmate</th><th>W/L forfeit</th><th>Illegal/game</th><th title="Average Centipawn Loss — lower is better">ACPL ↓</th></tr>
+    </thead>
+    <tbody id="lb-body"></tbody>
+  </table>
+</div>
+
+<!-- ===== HISTORY ===== -->
+<div id="tab-history" class="page">
+  <div id="game-history"></div>
+</div>
+
+<!-- Game detail modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <h2 id="modal-title"></h2>
+    <div class="modal-subtitle" id="modal-subtitle"></div>
+    <div id="modal-moves"></div>
+    <button class="close-modal" onclick="closeModal()">Close</button>
+  </div>
+</div>
+
+<script>
+// =========================================================
+// Constants
+// =========================================================
+const PIECES = {
+  K:'♔', Q:'♕', R:'♖', B:'♗', N:'♘', P:'♙',
+  k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟',
+};
+
+const REASON_LABELS = {
+  checkmate:           'Checkmate',
+  stalemate:           'Stalemate',
+  forfeit:             'Forfeit — double illegal move',
+  timeout:             'Timeout — model exceeded 60 s',
+  draw_50move:         'Draw — 50-move rule',
+  draw_repetition:     'Draw — threefold repetition',
+  draw_insufficient:   'Draw — insufficient material',
+  draw_max_moves:      'Draw — 200-move limit reached',
+  aborted:             'Game aborted',
+  unknown:             'Unknown reason',
+};
+
+// =========================================================
+// State
+// =========================================================
+const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+let activeGameId = null;
+let pollInterval = null;
+let lbFilter = 'all';
+let selectedMove = null;
+let allMoves = [];
+let gameConfig = {};       // { white_model_id, white_language, black_model_id, black_language }
+let browseIndex = null;    // null = live/latest, 0 = start, N = after move N
+let isPaused = false;
+let lastIllegalMoveId = null;  // track so we only notify once per illegal move
+
+// =========================================================
+// Board
+// =========================================================
+function fenToGrid(fen) {
+  return fen.split(' ')[0].split('/').map(row => {
+    const cells = [];
+    for (const ch of row) {
+      if (/\d/.test(ch)) for (let i = 0; i < +ch; i++) cells.push(null);
+      else cells.push(ch);
+    }
+    return cells;
+  });
+}
+
+function renderBoard(fen) {
+  const grid = fenToGrid(fen);
+  const el = document.getElementById('board');
+  el.innerHTML = '';
+  for (let r = 0; r < 8; r++) {
+    const row = document.createElement('div');
+    row.className = 'board-row';
+    for (let f = 0; f < 8; f++) {
+      const sq = document.createElement('div');
+      sq.className = `sq ${(r + f) % 2 === 0 ? 'light' : 'dark'}`;
+      if (grid[r][f]) sq.textContent = PIECES[grid[r][f]] || '';
+      row.appendChild(sq);
+    }
+    el.appendChild(row);
+  }
+}
+
+// =========================================================
+// Tabs
+// =========================================================
+function showTab(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  document.querySelector(`.tab[onclick="showTab('${name}')"]`).classList.add('active');
+  if (name === 'leaderboard') loadLeaderboard();
+  if (name === 'history') loadHistory();
+}
+
+// =========================================================
+// Pills
+// =========================================================
+function setPill(groupId, value, el) {
+  document.querySelectorAll(`#${groupId} .pill`).forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  if (groupId === 'white-lang' || groupId === 'mode-picker') refreshPromptPreview();
+}
+function getPill(groupId, attr) {
+  const a = document.querySelector(`#${groupId} .pill.active`);
+  return a ? a.dataset[attr] : null;
+}
+
+// =========================================================
+// Models
+// =========================================================
+async function loadModels() {
+  const res = await fetch('/api/models');
+  const models = await res.json();
+  ['white-model','black-model'].forEach(id => {
+    const sel = document.getElementById(id);
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name;
+      sel.appendChild(opt);
+    });
+  });
+  if (models.length > 1) document.getElementById('black-model').selectedIndex = 1;
+  refreshPromptPreview();
+}
+
+async function refreshPromptPreview() {
+  const lang = getPill('white-lang', 'lang') || 'EN';
+  const mode = getPill('mode-picker', 'mode') || 'fen';
+  const res = await fetch(`/api/preview-prompt?language=${lang}&mode=${mode}`);
+  const data = await res.json();
+  document.getElementById('prompt-preview').textContent = data.prompt;
+}
+
+// =========================================================
+// Start / Stop
+// =========================================================
+async function startGame() {
+  if (activeGameId) return;
+
+  gameConfig = {
+    white_model_id: document.getElementById('white-model').value,
+    white_language: getPill('white-lang','lang'),
+    black_model_id: document.getElementById('black-model').value,
+    black_language: getPill('black-lang','lang'),
+    mode: getPill('mode-picker','mode'),
+    max_attempts: parseInt(getPill('attempts-picker','attempts') || '2'),
+  };
+
+  const res = await fetch('/api/game/start', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(gameConfig),
+  });
+  const data = await res.json();
+  activeGameId = data.game_id;
+
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-pause').disabled = false;
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('move-log').innerHTML = '';
+  document.getElementById('gameover-banner').classList.remove('show');
+  document.getElementById('illegal-event').classList.remove('show');
+  allMoves = [];
+  browseIndex = null;
+  isPaused = false;
+  lastIllegalMoveId = null;
+  clearReasoning();
+  _updateNavUI();
+
+  renderBoard(STARTING_FEN);
+  setStatus(`Game started — waiting for ${gameConfig.white_model_id} (White)…`, 'thinking');
+
+  pollInterval = setInterval(pollGame, 2000);
+}
+
+async function stopGame() {
+  if (!activeGameId) return;
+  await fetch(`/api/game/${activeGameId}`, {method:'DELETE'}).catch(() => {});
+  endPolling('aborted');
+}
+
+function endPolling(reason) {
+  clearInterval(pollInterval);
+  pollInterval = null;
+  activeGameId = null;
+  isPaused = false;
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-pause').disabled = true;
+  document.getElementById('btn-pause').textContent = 'Pause';
+  document.getElementById('btn-stop').disabled = true;
+  _updateNavUI();
+}
+
+function togglePause() {
+  if (!activeGameId) return;
+  isPaused = !isPaused;
+  const btn = document.getElementById('btn-pause');
+  if (isPaused) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+    btn.textContent = 'Resume';
+    setStatus('Paused — game still running on server', '');
+  } else {
+    btn.textContent = 'Pause';
+    pollInterval = setInterval(pollGame, 2000);
+    pollGame();
+  }
+}
+
+// =========================================================
+// Status bar
+// =========================================================
+function setStatus(msg, type) {
+  const el = document.getElementById('status-bar');
+  el.textContent = msg;
+  el.className = type || '';
+}
+
+// =========================================================
+// Polling
+// =========================================================
+async function pollGame() {
+  if (!activeGameId) return;
+  let data;
+  try {
+    const res = await fetch(`/api/game/${activeGameId}`);
+    data = await res.json();
+  } catch(e) { return; }
+
+  const moves = data.moves || [];
+  const newMove = moves.length > 0 && moves[moves.length - 1].id !== (allMoves[allMoves.length - 1] || {}).id;
+
+  if (newMove) {
+    allMoves = moves;
+    renderMoveLog(moves);
+    _highlightBrowsedMove();
+    _updateNavUI();
+
+    // Auto-show latest move reasoning only if in live mode
+    if (browseIndex === null) {
+      selectMoveNoNav(moves[moves.length - 1]);
+    }
+
+    // Notify if a retry just appeared
+    const latest = moves[moves.length - 1];
+    if (latest.was_retry && latest.id !== lastIllegalMoveId) {
+      lastIllegalMoveId = latest.id;
+      const model = latest.color === 'white' ? gameConfig.white_model_id : gameConfig.black_model_id;
+      const el = document.getElementById('illegal-event');
+      const attempted = latest.first_attempt_move ? ` (tried: ${latest.first_attempt_move})` : '';
+      el.textContent = `⚠ ${capitalize(latest.color)} (${model}) made an illegal move and had to retry${attempted}`;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 10000);
+    }
+  }
+
+  // Only update board if in live mode (not browsing)
+  if (browseIndex === null) {
+    renderBoard(data.fen);
+  }
+
+  if (data.status === 'finished') {
+    allMoves = moves;
+    showGameOver(data);
+    endPolling(data.result_reason);
+  } else {
+    const turn = data.fen.split(' ')[1] === 'w' ? 'white' : 'black';
+    const model = turn === 'white' ? gameConfig.white_model_id : gameConfig.black_model_id;
+    const lang  = turn === 'white' ? gameConfig.white_language : gameConfig.black_language;
+    if (!isPaused) setStatus(`${capitalize(turn)} to move — ${model} (${lang}) thinking…`, 'thinking');
+  }
+}
+
+// =========================================================
+// Game over banner
+// =========================================================
+function showGameOver(data) {
+  const result = data.result;
+  const reason = data.result_reason;
+  const moves  = data.moves || [];
+
+  let resultText;
+  if (result === 'draw') resultText = 'Draw';
+  else if (result === 'white') resultText = `White wins — ${gameConfig.white_model_id} (${gameConfig.white_language})`;
+  else resultText = `Black wins — ${gameConfig.black_model_id} (${gameConfig.black_language})`;
+
+  document.getElementById('go-result').textContent = resultText;
+  document.getElementById('go-reason').textContent = REASON_LABELS[reason] || reason;
+  document.getElementById('go-models').textContent =
+    `${gameConfig.white_model_id} (${gameConfig.white_language}) vs ${gameConfig.black_model_id} (${gameConfig.black_language})`;
+
+  // For forfeit: show which model failed and what it played
+  const forfeitEl = document.getElementById('go-forfeit');
+  if (reason === 'forfeit' && moves.length > 0) {
+    const lastMove = moves[moves.length - 1];
+    const loser = result === 'white' ? 'black' : 'white';
+    const loserModel = loser === 'white' ? gameConfig.white_model_id : gameConfig.black_model_id;
+    const loserLang  = loser === 'white' ? gameConfig.white_language : gameConfig.black_language;
+    forfeitEl.textContent =
+      `${loserModel} (${loserLang}) played two illegal moves in a row.\n` +
+      `Last attempt: "${lastMove.move}"\n` +
+      (lastMove.reasoning ? `Reasoning: ${lastMove.reasoning}` : '');
+    forfeitEl.style.display = 'block';
+  } else if (reason === 'timeout') {
+    const loser = result === 'white' ? 'black' : 'white';
+    const loserModel = loser === 'white' ? gameConfig.white_model_id : gameConfig.black_model_id;
+    forfeitEl.textContent = `${loserModel} did not respond within 60 seconds.`;
+    forfeitEl.style.display = 'block';
+  } else {
+    forfeitEl.style.display = 'none';
+  }
+
+  document.getElementById('gameover-banner').classList.add('show');
+
+  const statusLabel = result === 'draw' ? 'Draw' : `${capitalize(result)} wins — ${REASON_LABELS[reason] || reason}`;
+  setStatus(statusLabel, 'finished');
+}
+
+// =========================================================
+// Move log
+// =========================================================
+function renderMoveLog(moves) {
+  const log = document.getElementById('move-log');
+  log.innerHTML = '';
+
+  const pairs = {};
+  for (const m of moves) {
+    if (!pairs[m.move_number]) pairs[m.move_number] = {};
+    pairs[m.move_number][m.color] = m;
+  }
+
+  for (const [num, pair] of Object.entries(pairs)) {
+    const row = document.createElement('div');
+    row.className = 'move-pair';
+
+    const numEl = document.createElement('div');
+    numEl.className = 'move-num';
+    numEl.textContent = num + '.';
+    row.appendChild(numEl);
+
+    for (const color of ['white', 'black']) {
+      const cell = document.createElement('div');
+      if (pair[color]) {
+        const m = pair[color];
+        const cls = m.illegal_reason ? 'forfeit' : m.was_retry ? 'retry' : '';
+        cell.className = `move-cell${cls ? ' ' + cls : ''}`;
+        const moveText = m.move + (m.move_icelandic ? ` / ${m.move_icelandic}` : '');
+        const evalText = m.eval_score != null ? ` <span class="eval-score">${m.eval_score}</span>` : '';
+        cell.innerHTML = moveText + evalText;
+        cell.dataset.id = m.id;
+        cell.title = m.illegal_reason ? `Forfeit: ${m.illegal_reason}` :
+                     m.was_retry ? `↺ Retried after illegal move${m.first_attempt_move ? ' (tried: ' + m.first_attempt_move + ')' : ''}` : '';
+        cell.onclick = () => selectMove(m);
+      } else {
+        cell.className = 'move-cell empty';
+      }
+      row.appendChild(cell);
+    }
+    log.appendChild(row);
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+// =========================================================
+// Reasoning panel
+// =========================================================
+// selectMove: navigate board to this move AND show reasoning
+function selectMove(m) {
+  const idx = allMoves.findIndex(x => x.id === m.id);
+  if (idx >= 0) {
+    browseIndex = idx + 1;
+    renderBoard(allMoves[idx].fen_after || STARTING_FEN);
+    _updateNavUI();
+  }
+  _highlightBrowsedMove();
+  _showMoveReasoning(m);
+}
+
+// selectMoveNoNav: show reasoning only, don't change board/browse state
+function selectMoveNoNav(m) {
+  _showMoveReasoning(m);
+  _highlightBrowsedMove();
+}
+
+function _showMoveReasoning(m) {
+  document.querySelectorAll('.move-cell').forEach(c => c.classList.remove('selected'));
+  const el = document.querySelector(`.move-cell[data-id="${m.id}"]`);
+  if (el) el.classList.add('selected');
+
+  const model = m.color === 'white' ? gameConfig.white_model_id : gameConfig.black_model_id;
+  const lang  = m.color === 'white' ? gameConfig.white_language : gameConfig.black_language;
+
+  let whoText = `Move ${m.move_number} · ${capitalize(m.color)} · ${model} (${lang})`;
+  if (m.illegal_reason) whoText += ` · ✗ FORFEIT (${m.attempts_made || 1} attempt${(m.attempts_made || 1) > 1 ? 's' : ''})`;
+  else if (m.was_retry)  whoText += ` · ↺ retried (attempt ${m.attempts_made || 2})`;
+  document.getElementById('reasoning-who').textContent = whoText;
+
+  // First attempt block (shown for retry/forfeit moves)
+  const faBlock = document.getElementById('first-attempt-block');
+  const retryLabel = document.getElementById('retry-section-label');
+  const rawAlways = document.getElementById('raw-response-always');
+  const rawToggle = document.getElementById('raw-toggle');
+  const rawEl = document.getElementById('raw-response');
+
+  if (m.was_retry) {
+    faBlock.style.display = 'block';
+    retryLabel.style.display = 'none';
+    document.getElementById('first-attempt-prompt').textContent =
+      m.first_attempt_prompt || '(prompt not recorded — play a new game to capture this)';
+    document.getElementById('first-attempt-raw').textContent =
+      m.first_attempt_raw_response || '(response not recorded — play a new game to capture this)';
+
+    // Show all intermediate + final attempts
+    const allAttempts = m.all_attempts ? JSON.parse(m.all_attempts) : null;
+    if (allAttempts && allAttempts.length > 1) {
+      rawAlways.innerHTML = '';
+      allAttempts.slice(1).forEach((resp, i) => {
+        const label = document.createElement('span');
+        label.className = 'fa-label';
+        label.style.marginTop = '6px';
+        label.textContent = `↺ Attempt ${i + 2} — model response`;
+        const pre = document.createElement('div');
+        pre.className = 'first-attempt-raw';
+        pre.textContent = resp;
+        rawAlways.appendChild(label);
+        rawAlways.appendChild(pre);
+      });
+      rawAlways.style.display = 'block';
+    } else if (m.raw_response) {
+      rawAlways.innerHTML = '';
+      const label = document.createElement('span');
+      label.className = 'fa-label';
+      label.style.marginTop = '6px';
+      label.textContent = `↺ Attempt ${m.attempts_made || 2} — model response`;
+      const pre = document.createElement('div');
+      pre.className = 'first-attempt-raw';
+      pre.textContent = m.raw_response;
+      rawAlways.appendChild(label);
+      rawAlways.appendChild(pre);
+      rawAlways.style.display = 'block';
+    } else {
+      rawAlways.style.display = 'none';
+    }
+    rawToggle.className = '';
+    rawEl.style.display = 'none';
+  } else {
+    faBlock.style.display = 'none';
+    retryLabel.style.display = 'none';
+    rawAlways.style.display = 'none';
+    if (m.raw_response) {
+      rawToggle.className = 'show';
+      rawEl.textContent = m.raw_response;
+      rawEl.style.display = 'none';
+      rawToggle.textContent = 'show raw response';
+    } else {
+      rawToggle.className = '';
+      rawEl.style.display = 'none';
+    }
+  }
+
+  const textEl = document.getElementById('reasoning-text');
+  if (m.illegal_reason) {
+    textEl.textContent = `Illegal move: ${m.illegal_reason}`;
+    textEl.className = 'illegal';
+  } else if (m.reasoning) {
+    textEl.textContent = m.reasoning;
+    textEl.className = '';
+  } else {
+    textEl.textContent = 'No reasoning provided.';
+    textEl.className = 'empty';
+  }
+}
+
+function clearReasoning() {
+  document.getElementById('reasoning-who').textContent = '';
+  document.getElementById('first-attempt-block').style.display = 'none';
+  document.getElementById('retry-section-label').style.display = 'none';
+  document.getElementById('raw-response-always').style.display = 'none';
+  document.getElementById('reasoning-text').textContent = 'Select a move to see its reasoning.';
+  document.getElementById('reasoning-text').className = 'empty';
+  document.getElementById('raw-toggle').className = '';
+  document.getElementById('raw-response').style.display = 'none';
+}
+
+// =========================================================
+// Browse navigation
+// =========================================================
+function navTo(idx) {
+  browseIndex = Math.max(0, Math.min(idx, allMoves.length));
+  _applyBrowse();
+}
+
+function navStep(delta) {
+  const cur = browseIndex === null ? allMoves.length : browseIndex;
+  navTo(cur + delta);
+}
+
+function navLast() {
+  browseIndex = null;
+  _applyBrowse();
+}
+
+function _applyBrowse() {
+  const fen = browseIndex === null || browseIndex >= allMoves.length
+    ? (allMoves.length > 0 ? allMoves[allMoves.length - 1].fen_after : STARTING_FEN)
+    : browseIndex === 0 ? STARTING_FEN
+    : allMoves[browseIndex - 1].fen_after || STARTING_FEN;
+  renderBoard(fen);
+  _updateNavUI();
+  _highlightBrowsedMove();
+}
+
+function _updateNavUI() {
+  const total = allMoves.length;
+  const atLive = browseIndex === null;
+  const pos = atLive ? total : browseIndex;
+
+  document.getElementById('nav-first').disabled = total === 0 || pos === 0;
+  document.getElementById('nav-prev').disabled  = total === 0 || pos === 0;
+  document.getElementById('nav-next').disabled  = total === 0 || atLive;
+  document.getElementById('nav-last').disabled  = total === 0 || atLive;
+
+  let label = '—';
+  if (total > 0) {
+    if (atLive) label = activeGameId ? '● Live' : `${total}/${total}`;
+    else if (pos === 0) label = 'Start';
+    else label = `${pos} / ${total}`;
+  }
+  document.getElementById('nav-label').textContent = label;
+}
+
+function _highlightBrowsedMove() {
+  document.querySelectorAll('.move-cell').forEach(c => c.classList.remove('browse-active'));
+  if (browseIndex !== null && browseIndex > 0 && browseIndex <= allMoves.length) {
+    const m = allMoves[browseIndex - 1];
+    const el = document.querySelector(`.move-cell[data-id="${m.id}"]`);
+    if (el) el.classList.add('browse-active');
+  }
+}
+
+function toggleRaw() {
+  const rawEl = document.getElementById('raw-response');
+  const toggle = document.getElementById('raw-toggle');
+  if (rawEl.style.display === 'none') {
+    rawEl.style.display = 'block';
+    toggle.textContent = 'hide raw response';
+  } else {
+    rawEl.style.display = 'none';
+    toggle.textContent = 'show raw response';
+  }
+}
+
+// =========================================================
+// Leaderboard
+// =========================================================
+async function loadLeaderboard() {
+  const res = await fetch(`/api/leaderboard?language=${lbFilter}`);
+  const rows = await res.json();
+  const body = document.getElementById('lb-body');
+  body.innerHTML = '';
+  rows.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td>${row.model_name}</td>
+      <td><span class="lang-badge lang-${row.language}">${row.language}</span></td>
+      <td>${row.wins} / ${row.losses} / ${row.draws}</td>
+      <td>${row.games}</td>
+      <td>${row.avg_moves_win ?? '—'}</td>
+      <td>${row.avg_moves_loss ?? '—'}</td>
+      <td>${row.avg_moves_per_game ?? '—'}</td>
+      <td>${row.wld_as_white ?? '—'}</td>
+      <td>${row.wld_as_black ?? '—'}</td>
+      <td>${row.games_as_white ?? 0}</td>
+      <td>${row.games_as_black ?? 0}</td>
+      <td>${row.wins_by_checkmate ?? 0} / ${row.losses_by_checkmate ?? 0}</td>
+      <td>${row.wins_by_forfeit ?? 0} / ${row.losses_by_forfeit ?? 0}</td>
+      <td>${row.illegal_per_game ?? '—'}</td>
+      <td>${row.avg_cp_loss ?? '—'}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function setLbFilter(f, el) {
+  lbFilter = f;
+  document.querySelectorAll('.lb-filters .pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  loadLeaderboard();
+}
+
+// =========================================================
+// History
+// =========================================================
+async function loadHistory() {
+  const res = await fetch('/api/games');
+  const games = await res.json();
+  const container = document.getElementById('game-history');
+  container.innerHTML = '';
+
+  if (!games.length) {
+    container.innerHTML = '<p style="color:#888;font-size:0.875rem;">No games yet.</p>';
+    return;
+  }
+
+  games.forEach(g => {
+    const div = document.createElement('div');
+    div.className = 'game-row';
+    const resultClass = g.result === 'draw' ? 'draw' : (g.result || 'draw');
+    div.innerHTML = `
+      <div class="gr-top">
+        <span>
+          <span style="color:#aaa;font-size:0.8rem;margin-right:8px">#${g.id}</span>
+          <strong>${g.white_model_id}</strong> <span class="lang-badge lang-${g.white_language}">${g.white_language}</span>
+          <span style="color:#aaa;margin:0 6px">vs</span>
+          <strong>${g.black_model_id}</strong> <span class="lang-badge lang-${g.black_language}">${g.black_language}</span>
+        </span>
+        <span class="result-badge result-${resultClass}">${g.result || '…'}</span>
+      </div>
+      <div class="gr-bottom">
+        ${REASON_LABELS[g.result_reason] || g.result_reason || 'in progress'}
+        · ${g.total_moves} half-moves · ${g.mode ? g.mode.toUpperCase() : ''} · ${(g.created_at || '').slice(0,19)}
+      </div>
+    `;
+    if (g.status === 'finished') div.onclick = () => openGameModal(g.id, g);
+    container.appendChild(div);
+  });
+}
+
+// =========================================================
+// Game modal
+// =========================================================
+async function openGameModal(gameId, game) {
+  const res = await fetch(`/api/game/${gameId}/moves`);
+  const moves = await res.json();
+
+  document.getElementById('modal-title').textContent =
+    `${game.white_model_id} (${game.white_language}) vs ${game.black_model_id} (${game.black_language})`;
+  document.getElementById('modal-subtitle').textContent =
+    `${REASON_LABELS[game.result_reason] || game.result_reason} · ${game.total_moves} half-moves · Result: ${game.result}`;
+
+  const container = document.getElementById('modal-moves');
+  container.innerHTML = '';
+
+  for (const m of moves) {
+    const div = document.createElement('div');
+    div.className = 'modal-move';
+
+    const header = document.createElement('div');
+    header.className = 'modal-move-header';
+    header.innerHTML = `
+      <span class="mn">${m.move_number}${m.color === 'white' ? '.' : '…'}</span>
+      <span class="mc">${m.move}</span>
+      ${m.move_icelandic ? `<span class="mi">(${m.move_icelandic})</span>` : ''}
+      ${m.was_retry ? `<span class="mr">⚠ retry</span>` : ''}
+    `;
+    div.appendChild(header);
+
+    if (m.illegal_reason) {
+      const illegalEl = document.createElement('div');
+      illegalEl.className = 'modal-reasoning';
+      illegalEl.style.cssText = 'color:#c0392b;font-weight:500;border-left-color:#c0392b;';
+      illegalEl.textContent = `Illegal: ${m.illegal_reason}`;
+      div.appendChild(illegalEl);
+    }
+
+    const reason = document.createElement('div');
+    reason.className = `modal-reasoning${m.reasoning ? '' : ' no-reason'}`;
+    reason.textContent = m.reasoning || 'No reasoning.';
+    div.appendChild(reason);
+
+    container.appendChild(div);
+  }
+
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-overlay') || e.currentTarget.tagName === 'BUTTON') {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+}
+
+// =========================================================
+// Helpers
+// =========================================================
+function capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
+
+// =========================================================
+// Init
+// =========================================================
+loadModels();
+renderBoard(STARTING_FEN);
+_updateNavUI();
+</script>
+</body>
+</html>

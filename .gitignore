@@ -1,0 +1,9 @@
+.env
+chess_arena.db
+server.log
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+drog.docx
+~$drog.docx
