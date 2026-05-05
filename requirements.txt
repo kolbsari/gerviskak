@@ -2,7 +2,4 @@ fastapi
 uvicorn[standard]
 python-chess
 openai
-anthropic
-google-genai
-mistralai
 python-dotenv
